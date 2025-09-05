@@ -5,6 +5,8 @@ from PIL import Image
 from io import BytesIO
 from datetime import datetime
 
+update_data_interval = 0.2  # 秒
+
 # 获取二维码并启动扫码检测
 async def get_qr_code(state):
     
@@ -42,10 +44,9 @@ async def screenshot_loop(state):
     while not state.get("stop"):
         page_bytes = await page.screenshot()
         state['page_image'] = Image.open(BytesIO(page_bytes))
-        print(f"已截图 {i+1} 张")
         i += 1
         # 非阻塞
-        await asyncio.sleep(1)
+        await asyncio.sleep(update_data_interval)
         if i >= 60*3:  # 最多截图3分钟
             break
     
@@ -81,6 +82,9 @@ def close_browser(state):
 
 # 大模型提问 3次
 async def do_llm_chat(state):
+    
+    if state.get("scanned").find('扫码成功') == -1:
+        return
 
     state['scanned'] = "正在自动执行大模型提问..."
     
@@ -133,8 +137,8 @@ with gr.Blocks(title="研发云登录助手", css="""
     
     btn_quit.click(fn=close_browser, inputs=state, outputs=[])
 
-    timer = gr.Timer(value=1.0)  # 每秒触发
+    timer = gr.Timer(value=update_data_interval)  # 每秒触发
     timer.tick(fn=check_status, inputs=state, outputs=[tip, img])
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=6006)
+    demo.launch(server_name="0.0.0.0", server_port=7860)
