@@ -7,7 +7,6 @@ from datetime import datetime
 
 # 获取二维码并启动扫码检测
 async def get_qr_code(state):
-    state['scanned'] = "正在打开研发云页面，请稍候..."
     
     pw = await async_playwright().start()
     browser = await pw.chromium.launch(headless=False)
@@ -17,7 +16,7 @@ async def get_qr_code(state):
     state["playwright"] = pw
     state["browser"] = browser
     state["page"] = page
-    state["scanned"] = "等待访问研发云网站"
+    state['scanned'] = "正在打开研发云页面，请稍候..."
     state["stop"] = False
 
     # 保留你的页面地址和判断逻辑
@@ -29,6 +28,8 @@ async def get_qr_code(state):
     page_img = Image.open(BytesIO(page_bytes))
     state['page_image'] = page_img
 
+
+    state['scanned'] = "请扫码登录（如果遇到验证码过期，请点击'关闭浏览器'再重新点击'访问研发云网站'）"
     # 异步等待扫码
     asyncio.create_task(wait_scan(state))
 
@@ -50,6 +51,7 @@ async def screenshot_loop(state):
     
     # 循环截图结束，关闭浏览器
     if page:
+        state['page_image'] = None
         await page.close()
 
 # 异步检测扫码状态
@@ -71,8 +73,7 @@ def check_status(state):
 # 关闭浏览器
 def close_browser(state):
     state["stop"] = True
-    state['scanned'] = "等待获取二维码..."
-    state['page_image'] = None
+    state['scanned'] = "等待访问研发云网站"
     state["playwright"] = None
     state["browser"] = None
     state["page"] = None
@@ -80,9 +81,6 @@ def close_browser(state):
 
 # 大模型提问 3次
 async def do_llm_chat(state):
-    
-    if state.get("scanned").find('扫码成功') > -1:
-        return gr.Toast("请先点击'访问研发云网站'按钮，扫码成功后才能进行大模型提问", duration=2000)  # 弹 2 秒
 
     state['scanned'] = "正在自动执行大模型提问..."
     
@@ -120,14 +118,14 @@ with gr.Blocks(title="研发云登录助手", css="""
         .green-btn {background-color: green; color: white;}
     """) as demo:
     # gr.Markdown("### 点击按钮获取登录二维码")
-    state = gr.State(value={})  # 每个用户独立 state
+    state = gr.State(value={'scanned': '等待访问研发云'})  # 每个用户独立 state
     with gr.Row():
         btn = gr.Button("首先 - 访问研发云网站", scale=1, elem_classes="blue-btn")
         btn_llm = gr.Button("可选 - 进行大模型提问（每月一次）", scale=1, elem_classes="grey-btn")
         btn_quit = gr.Button("最后 - 关闭浏览器",  scale=1, elem_classes="green-btn")
         
-    tip = gr.Textbox(label="状态", interactive=False)
-    img = gr.Image(type="pil", label="登录二维码", interactive=False)
+    tip = gr.Textbox(label="操作提示", interactive=False)
+    img = gr.Image(type="pil", label="页面预览", interactive=False)
 
     btn.click(fn=get_qr_code, inputs=state, outputs=[])
     
