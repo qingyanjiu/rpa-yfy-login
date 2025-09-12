@@ -1,72 +1,135 @@
+import json
 import asyncio
 import websockets
-import json
 import uuid
-import random
+from asyncio import Queue
+
 from tasks_state import TaskState
 
-WS_URL = "wss://www.srdcloud.cn/websocket/peerAppgw"
-
 class WSClient:
-    def __init__(self):
+    def __init__(self, url, session_id: str = '', invoke_id: str = '335793'):
+        self.url = url
         self.ws = None
         self.connected = False
-        self.heartbeat_task = None
+        self.api_key = None
         self.channel_id = None
+        # 登录的用户id
+        self.invoke_id = invoke_id
+        # 登录的用户会话id
+        self.session_id = session_id
+        self.heartbeat_task = None
+        # 调用接口时传入
+        self.session_id = None
         self.task_state = TaskState()
+        self.message_queue = Queue()
 
-    async def connect_once(self):
-        """
-        用户调用接口时连接服务器（只尝试一次）
-        """
-        if self.connected:
-            return  # 已经连接
-        self.ws = await websockets.connect("wss://www.srdcloud.cn/websocket/peerAppgw")
-        self.connected = True
-        print("✅ WebSocket 已连接（按需）")
+    async def connect_and_run(self):
+        try:
+            self.ws = await websockets.connect(self.url)
+            self.connected = True
+            print("✅ WebSocket 已连接")
 
-        # 启动心跳
-        if not self.heartbeat_task or self.heartbeat_task.done():
-            self.heartbeat_task = asyncio.create_task(self.heartbeat())
+            # RegisterChannel
+            await self.register_channel()
 
-    async def heartbeat(self):
-        """
-        定期发送客户端心跳
-        """
-        while self.connected:
-            try:
-                await asyncio.sleep(18 + random.randint(0, 4))
-                heartbeat_msg = {"messageName": "ClientHeartbeat"}
-                await self.ws.send(f"<WBChannel>{json.dumps(heartbeat_msg)}</WBChannel>")
-                print("💓 发送心跳")
-            except Exception as e:
-                print("⚠️ 心跳失败:", e)
-                break
+            # GetUserApiKey
+            await self.get_user_api_key()
+
+            # 启动心跳
+            self.heartbeat_task = asyncio.create_task(self.send_heartbeat())
+            # 启动接收循环
+            asyncio.create_task(self.listen())
+        except Exception as e:
+            print("❌ WebSocket 连接失败:", e)
+            self.connected = False
 
     async def register_channel(self):
-        """
-        注册通道
-        """
-        register_msg = {
+        msg = {
             "messageName": "RegisterChannel",
             "context": {
                 "messageName": "RegisterChannel",
                 "appGId": "aicode",
-                "invokerId": "306177",
+                "invokerId": self.invoke_id,
                 "version": "1.6.0",
-                "apiKey": "22fe13ed-46c4-4f2e-9b58-5c0d3e66a21e"
+                "sessionId": f"{self.session_id}"  # 这里先随便传，服务器会在GetUserApiKey_resp里返回正确的
             }
         }
-        await self.ws.send(f"<WBChannel>{json.dumps(register_msg)}</WBChannel>")
-
+        await self.send(msg)
+        print(f"📡 RegisterChannel 已发送")
+        # 等待响应
         while True:
-            resp_text = await self.ws.recv()
-            resp = self.parse_wbchannel(resp_text)
-            if resp.get("messageName") == "RegisterChannel_resp":
-                self.channel_id = resp["context"]["channelId"]
-                print("✅ 通道注册成功:", self.channel_id)
+            resp = await self.ws.recv()
+            resp_str = self.parse_wbchannel(resp)
+            if "RegisterChannel_resp" in resp_str:
+                data = json.loads(resp_str)
+                self.channel_id = data["context"]["channelId"]
+                print("🔑 拿到 channelId:", self.channel_id)
                 break
+            else:
+                print("忽略非 GetUserApiKey_resp 消息")
 
+    async def get_user_api_key(self):
+        req_id = str(uuid.uuid4())
+        msg = {
+            "messageName": "GetUserApiKey",
+            "context": {
+                "messageName": "GetUserApiKey",
+                "reqId": req_id,
+                "invokerId": "335793",
+                "sessionId": self.session_id,  # 用调用接口传进来的sessionId
+                "version": "1.6.0"
+            },
+            "payload": {
+                "clientType": "vscode",
+                "clientVersion": "1.100.2",
+                "clientPlatform": "windows-x64",
+                "gitUrls": [],
+                "pluginVersion": "1.6.0"
+            }
+        }
+        await self.send(msg)
+        print("📡 GetUserApiKey 已发送")
+        # 等待响应
+        while True:
+            resp = await self.ws.recv()
+            resp_str = self.parse_wbchannel(resp)
+            if "GetUserApiKey_resp" in resp_str:
+                data = json.loads(resp_str)
+                self.api_key = data["payload"]["apiKey"]
+                print("🔑 拿到 apiKey:", self.api_key)
+                break
+            else:
+                print("忽略非 GetUserApiKey_resp 消息")
+
+    async def send_heartbeat(self):
+        while self.connected:
+            await self.send({"messageName": "ClientHeartbeat"})
+            await asyncio.sleep(10)
+
+    async def send(self, data):
+        if self.ws:
+            payload = "<WBChannel>" + json.dumps(data, ensure_ascii=False) + "</WBChannel>"
+            await self.ws.send(payload)
+
+    async def listen(self):
+        try:
+            async for message in self.ws:
+                print("📩 收到:", message)
+                await self.message_queue.put(message)
+                meesage_text = self.parse_wbchannel(message)
+                if "ServerHeartbeat" in meesage_text:
+                    await self.send({"messageName": "ClientHeartbeatResponse"})
+                elif "Closed" in meesage_text:
+                    print("⚠️ WebSocket 连接被断开，准备关闭 WebSocket client 连接...")
+                    await self.close()
+        except websockets.ConnectionClosed:
+            print("⚠️ WebSocket 连接被断开，准备关闭 WebSocket client 连接...")
+            await self.close()
+        finally:
+            print("🔌 监听结束，准备关闭 WebSocket client 连接...")
+            await self.close()
+
+    # 发送代码生成请求
     async def send_user_activity(self):
         if not self.channel_id:
             return None
@@ -100,8 +163,9 @@ class WSClient:
 
         # 等待服务器响应
         while True:
-            resp_text = await self.ws.recv()
-            resp = self.parse_wbchannel(resp_text)
+            # 从队列取
+            resp_text = await self.message_queue.get()  
+            resp = json.loads(self.parse_wbchannel(resp_text))
             if resp.get("messageName") not in ["ServerHeartbeat"]:
                 return resp
 
@@ -126,6 +190,12 @@ class WSClient:
 
     def parse_wbchannel(self, raw_text):
         try:
-            return json.loads(raw_text.replace("<WBChannel>", "").replace("</WBChannel>", ""))
+            return raw_text.replace("<WBChannel>", "").replace("</WBChannel>", "")
         except:
             return {}
+
+    async def close(self):
+        if self.ws:
+            await self.ws.close()
+            print("🔌 WebSocket client 连接已关闭")
+        self.connected = False
