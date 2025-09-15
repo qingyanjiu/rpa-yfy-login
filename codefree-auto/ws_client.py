@@ -127,10 +127,11 @@ class WSClient:
             await self.close()
         finally:
             print("🔌 监听结束，准备关闭 WebSocket client 连接...")
+            await asyncio.sleep(10)
             await self.close()
 
     # 发送代码生成请求
-    async def send_user_activity(self):
+    async def send_user_activity(self, line):
         if not self.channel_id:
             return None
 
@@ -140,9 +141,9 @@ class WSClient:
             "context": {
                 "messageName": "UserActivityNotify",
                 "reqId": req_id,
-                "invokerId": "306177",
+                "invokerId": f"{self.invoke_id}",
                 "version": "1.6.0",
-                "apiKey": "22fe13ed-46c4-4f2e-9b58-5c0d3e66a21e",
+                "apiKey": f"{self.api_key}",
                 "channelId": self.channel_id
             },
             "payload": {
@@ -150,11 +151,12 @@ class WSClient:
                     "platform": "windows-x64",
                     "type": "vscode",
                     "version": "1.100.2",
-                    "pluginVersion": "1.6.0"
+                    "pluginVersion": "1.6.0",
+                    "projectName": "scan"
                 },
                 "activityType": "code_display",
                 "service": "codegen",
-                "lines": 1,
+                "lines": line,
                 "count": 1
             }
         }
@@ -179,7 +181,7 @@ class WSClient:
                 print("❌ WebSocket 未连接，终止任务")
                 break
             try:
-                await self.send_user_activity()
+                await self.send_user_activity(i + 1)
                 self.task_state.update_task(task_id, i + 1)
                 print(f"🔄 第{i+1}/{total}条消息发送完成")
             except Exception as e:

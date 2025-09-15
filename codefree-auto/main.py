@@ -11,7 +11,7 @@ task_lock = asyncio.Lock()
 current_task_id = None
 
 @app.post("/start_task")
-async def start_task(count: int = 1000, session_id: str = ""):
+async def start_task(count: int = 5, session_id: str = ""):
     global current_task_id
 
     if task_lock.locked():
@@ -19,6 +19,7 @@ async def start_task(count: int = 1000, session_id: str = ""):
 
     # 获取锁
     await task_lock.acquire()
+    ws_client.session_id = session_id
     task_id = str(uuid.uuid4())
     current_task_id = task_id
 
@@ -28,8 +29,8 @@ async def start_task(count: int = 1000, session_id: str = ""):
 
 async def run_task(task_id: str, count: int, session_id: str):
     global current_task_id
-
     try:
+
         # 注册通道
         await ws_client.connect_and_run()
 
