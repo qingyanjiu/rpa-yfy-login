@@ -10,6 +10,8 @@ update_data_interval = 0.2  # 秒
 # 获取二维码并启动扫码检测
 async def get_qr_code(state):
     
+    state['scanned'] = "正在分配浏览器资源，可能需要10秒左右时间，请耐心等待..."
+    
     pw = await async_playwright().start()
     browser = await pw.chromium.launch(headless=False)
     page = await browser.new_page()
