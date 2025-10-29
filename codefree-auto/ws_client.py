@@ -23,6 +23,8 @@ class WSClient:
     self.task_state = TaskState()
     self.message_queue = Queue()
     self.version = version
+    # 一次生成多少行
+    self.lines = 2000
 
   async def connect_and_run(self, task_lock):
     try:
@@ -135,7 +137,7 @@ class WSClient:
         print("锁已释放")
 
   # 发送代码生成请求
-  async def send_user_activity(self, line):
+  async def send_user_activity(self):
     if not self.channel_id:
       return None
 
@@ -160,7 +162,7 @@ class WSClient:
         },
         "activityType": "code_display",
         "service": "codegen",
-        "lines": line,
+        "lines": self.lines,
         "count": 1
       }
     }
@@ -185,9 +187,9 @@ class WSClient:
         print("❌ WebSocket 未连接，终止任务")
         break
       try:
-        await self.send_user_activity(i + 1)
+        await self.send_user_activity()
         self.task_state.update_task(task_id, i + 1)
-        print(f"🔄 第{i+1}/{total}条消息发送完成")
+        print(f"🔄 第{i+1}/{total}条消息发送完成, 共生成 {self.lines} 行")
       except Exception as e:
         print("⚠️ 消息发送失败:", e)
         break
