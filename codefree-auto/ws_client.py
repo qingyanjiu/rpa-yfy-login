@@ -7,7 +7,7 @@ from asyncio import Queue
 from tasks_state import TaskState
 
 class WSClient:
-  def __init__(self, url, session_id: str = '', invoke_id: str = '335793'):
+  def __init__(self, url, session_id: str = '', invoke_id: str = '335793', version="2.0.0"):
     self.url = url
     self.ws = None
     self.connected = False
@@ -22,6 +22,7 @@ class WSClient:
     self.session_id = None
     self.task_state = TaskState()
     self.message_queue = Queue()
+    self.version = version
 
   async def connect_and_run(self, task_lock):
     try:
@@ -50,7 +51,7 @@ class WSClient:
         "messageName": "RegisterChannel",
         "appGId": "aicode",
         "invokerId": self.invoke_id,
-        "version": "1.6.0",
+        "version": self.version,
         "sessionId": f"{self.session_id}" # 这里先随便传，服务器会在GetUserApiKey_resp里返回正确的
       }
     }
@@ -75,16 +76,16 @@ class WSClient:
       "context": {
         "messageName": "GetUserApiKey",
         "reqId": req_id,
-        "invokerId": "335793",
+        "invokerId": self.invoke_id,
         "sessionId": self.session_id, # 用调用接口传进来的sessionId
-        "version": "1.6.0"
+        "version": self.version
       },
       "payload": {
         "clientType": "vscode",
         "clientVersion": "1.100.2",
         "clientPlatform": "windows-x64",
         "gitUrls": [],
-        "pluginVersion": "1.6.0"
+        "pluginVersion": self.version
       }
     }
     await self.send(msg)
@@ -145,7 +146,7 @@ class WSClient:
         "messageName": "UserActivityNotify",
         "reqId": req_id,
         "invokerId": f"{self.invoke_id}",
-        "version": "1.6.0",
+        "version": self.version,
         "apiKey": f"{self.api_key}",
         "channelId": self.channel_id
       },
@@ -154,7 +155,7 @@ class WSClient:
           "platform": "windows-x64",
           "type": "vscode",
           "version": "1.100.2",
-          "pluginVersion": "1.6.0",
+          "pluginVersion": self.version,
           "projectName": "scan"
         },
         "activityType": "code_display",

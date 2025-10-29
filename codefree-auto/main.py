@@ -13,7 +13,7 @@ task_lock = asyncio.Lock()
 current_task_id = None
 
 @app.post("/start_task")
-async def start_task(count: int = 5, session_id: str = ""):
+async def start_task(count: int = 5, session_id: str = "", user_id: str = ""):
   global current_task_id
 
   if task_lock.locked():
@@ -22,11 +22,12 @@ async def start_task(count: int = 5, session_id: str = ""):
   # 获取锁
   await task_lock.acquire()
   ws_client.session_id = session_id
+  ws_client.invoke_id = user_id
   task_id = str(uuid.uuid4())
   current_task_id = task_id
 
   # 启动后台协程执行任务
-  asyncio.create_task(run_task(task_id, count, session_id))
+  asyncio.create_task(run_task(task_id, count, session_id, user_id))
   return {"task_id": task_id, "status": "started"}
 
 async def run_task(task_id: str, count: int, session_id: str):
