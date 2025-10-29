@@ -4,6 +4,7 @@ import uuid
 from ws_client import WSClient
 
 # uvicorn main:app --reload --host 0.0.0.0 --port 8000
+# http://localhost:8000/start_task?count=5&session_id=2b22e75f-3336-4263-856b-7283cf4c732d&user_id=335793
 
 app = FastAPI()
 ws_client = WSClient('wss://www.srdcloud.cn/websocket/peerAppgw')
