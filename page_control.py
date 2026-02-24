@@ -13,7 +13,7 @@ async def get_qr_code(state):
     state['scanned'] = "正在分配浏览器资源，可能需要10秒左右时间，请耐心等待..."
     
     pw = await async_playwright().start()
-    browser = await pw.chromium.launch(headless=False)
+    browser = await pw.chromium.launch(headless=True)
     page = await browser.new_page()
 
     # 保存到 state
